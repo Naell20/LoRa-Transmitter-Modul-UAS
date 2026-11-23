@@ -31,3 +31,6 @@
 | currentHistory[] | Menyimpan riwayat pembacaan arus AC RMS. |
 | ...HistoryIndex | Menunjukkan posisi penyimpanan berikutnya pada array. |
 | ...HistoryFull | Menandakan bahwa array riwayat sudah terisi penuh. |
+
+
+BY : WAYLEN 
