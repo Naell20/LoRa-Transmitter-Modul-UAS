@@ -18,19 +18,24 @@ const int pinTeganganAC = A3;
 const float VREF = 5.0f;
 const int ADC_MAX = 1023;
 const float OUTPUT_VOLTAGE_CALIBRATION = 1.992f;
-const float R1 = 33.0f;
-const float R2 = 8.2f;
+const float R1 = 33.0f; // INI Resistor ygy
+const float R2 = 8.2f; 
+
 const float DIVIDER_RATIO = (R1 + R2) / R2;
-float VOLTAGE_CALIBRATION = 0.7371f;
+// V input
+float VOLTAGE_CALIBRATION = 0.7000f;
 const int OVERSAMPLE_COUNT = 20;
+// Set arus
 const float MV_PER_A = 185.0f;
-const float CURRENT_SCALE = 0.11f / 0.055f;
+const float CURRENT_SCALE = 0.11f / 0.043f;
+
 const uint16_t DC_SAMPLES = 20;
 const float NOISE_DEADBAND_A = 0.05f;
 const int SAMPLE_WINDOW = 1000;
 float CALIBRATION_FACTOR = 1.0f;
 const float NOISE_THRESHOLD = 0.02f;
 const int NUM_SAMPLES = 10;
+// Arus Batre
 ACS712 ACS(pinArusDC, VREF, ADC_MAX, MV_PER_A);
 float dcCurrentHistory[NUM_SAMPLES];
 int dcCurrentHistoryIndex = 0;
