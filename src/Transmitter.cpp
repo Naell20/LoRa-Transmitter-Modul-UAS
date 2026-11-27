@@ -14,27 +14,33 @@ const int pinTeganganDC = A1;
 const int pinArusAC = A2;
 const int pinTeganganAC = A3;
 
-// setinggan sensor 
+// Settingan Sensor
 const float VREF = 5.0f;
 const int ADC_MAX = 1023;
-const float OUTPUT_VOLTAGE_CALIBRATION = 1.992f;
-const float R1 = 33.0f; // INI Resistor ygy
-const float R2 = 8.2f; 
-
-const float DIVIDER_RATIO = (R1 + R2) / R2;
-// V input
-float VOLTAGE_CALIBRATION = 0.7000f;
-const int OVERSAMPLE_COUNT = 20;
-// Set arus
-const float MV_PER_A = 185.0f;
-const float CURRENT_SCALE = 0.11f / 0.043f;
-
-const uint16_t DC_SAMPLES = 20;
-const float NOISE_DEADBAND_A = 0.05f;
-const int SAMPLE_WINDOW = 1000;
-float CALIBRATION_FACTOR = 1.0f;
-const float NOISE_THRESHOLD = 0.02f;
 const int NUM_SAMPLES = 10;
+
+// Tegangan DC
+const float R1 = 33.0f;
+const float R2 = 8.2f;
+const float DIVIDER_RATIO = (R1 + R2) / R2; // 5.02439
+float VOLTAGE_CALIBRATION = 0.7371f;
+const int OVERSAMPLE_COUNT = 20;
+
+// Arus DC ACS712
+const float MV_PER_A = 185.0f;
+const float CURRENT_SCALE = 0.11f / 0.055f;
+const uint16_t DC_SAMPLES = 20;
+const float NOISE_DEADBAND_A = 0.02f;
+
+// Arus AC ZHT103
+const int AC_SAMPLE_WINDOW = 400;
+float ZHT103_CALIBRATION_FACTOR = 1.0f; // I_aktual / I_terbaca_awal
+const float AC_CURRENT_NOISE_THRESHOLD = 0.02f;
+
+// Tegangan AC ZMPT101B
+float ZMPT101B_CALIBRATION_FACTOR = 532.04f; // Kalibrasi: 237.1 V / 218.81 V
+const float AC_VOLTAGE_NOISE_THRESHOLD = 2.0f;
+
 // Arus Batre
 ACS712 ACS(pinArusDC, VREF, ADC_MAX, MV_PER_A);
 float dcCurrentHistory[NUM_SAMPLES];
@@ -46,15 +52,19 @@ bool voltageHistoryFull = false;
 float currentHistory[NUM_SAMPLES];
 int currentHistoryIndex = 0;
 bool currentHistoryFull = false;
+float acVoltageHistory[NUM_SAMPLES];
+int acVoltageHistoryIndex = 0;
+bool acVoltageHistoryFull = false;
 
-// time out LoRa
+// Time out LoRa
 unsigned long lastTimeSend = 0;
 const unsigned long intervalKirim = 1000;
 const unsigned long batasTunggu = 500;
 
-// set Sensor smua
+// Set Sensor Semua
 float readInstantVoltage() {
   (void)analogRead(pinTeganganDC);
+  delayMicroseconds(100);
 
   long sumAdc = 0;
   for (int i = 0; i < OVERSAMPLE_COUNT; i++) {
@@ -85,8 +95,12 @@ float getSmoothedVoltage() {
   }
   return total / count;
 }
+
 // DC I
 float getSmoothedDcCurrentAmps() {
+  (void)analogRead(pinArusDC);
+  delayMicroseconds(100);
+
   float currentAmps = (ACS.mA_DC(DC_SAMPLES) / 1000.0f) * CURRENT_SCALE;
   float magnitudeAmps = fabs(currentAmps);
 
@@ -112,29 +126,33 @@ float getSmoothedDcCurrentAmps() {
   return sum / count;
 }
 
-// Bca Arus AC
+// Baca arus AC ZHT103
 float readCurrentRms() {
+  (void)analogRead(pinArusAC);
+  delayMicroseconds(100);
+
   long sumRaw = 0;
-  for (int i = 0; i < SAMPLE_WINDOW; i++) {
+  for (int i = 0; i < AC_SAMPLE_WINDOW; i++) {
     sumRaw += analogRead(pinArusAC);
   }
-  float offsetAdc = (float)sumRaw / SAMPLE_WINDOW;
+  float offsetAdc = (float)sumRaw / AC_SAMPLE_WINDOW;
 
   double sumSq = 0.0;
-  for (int i = 0; i < SAMPLE_WINDOW; i++) {
+  for (int i = 0; i < AC_SAMPLE_WINDOW; i++) {
     float diff = (float)analogRead(pinArusAC) - offsetAdc;
     sumSq += (double)diff * (double)diff;
   }
 
-  float rmsAdc = sqrt(sumSq / SAMPLE_WINDOW);
+  float rmsAdc = sqrt(sumSq / AC_SAMPLE_WINDOW);
   float rmsVoltage = (rmsAdc / ADC_MAX) * VREF;
-  float currentAmp = rmsVoltage * CALIBRATION_FACTOR;
-  if (currentAmp < NOISE_THRESHOLD) {
+
+  float currentAmp = rmsVoltage * ZHT103_CALIBRATION_FACTOR;
+  if (currentAmp < AC_CURRENT_NOISE_THRESHOLD) {
     currentAmp = 0.0f;
   }
   return currentAmp;
 }
-// DC V
+
 float getSmoothedCurrent() {
   float currentVal = readCurrentRms();
   currentHistory[currentHistoryIndex] = currentVal;
@@ -155,7 +173,54 @@ float getSmoothedCurrent() {
   return sum / count;
 }
 
-// set LoRa
+// Baca tegangan AC ZMPT101B
+float readAcVoltageRms() {
+  (void)analogRead(pinTeganganAC);
+  delayMicroseconds(100);
+
+  long sumRaw = 0;
+  for (int i = 0; i < AC_SAMPLE_WINDOW; i++) {
+    sumRaw += analogRead(pinTeganganAC);
+  }
+  float offsetAdc = (float)sumRaw / AC_SAMPLE_WINDOW;
+
+  double sumSq = 0.0;
+  for (int i = 0; i < AC_SAMPLE_WINDOW; i++) {
+    float diff = (float)analogRead(pinTeganganAC) - offsetAdc;
+    sumSq += (double)diff * (double)diff;
+  }
+
+  float rmsAdc = sqrt(sumSq / AC_SAMPLE_WINDOW);
+  float rmsVoltage = (rmsAdc / ADC_MAX) * VREF;
+
+  float voltageAc = rmsVoltage * ZMPT101B_CALIBRATION_FACTOR;
+  if (voltageAc < AC_VOLTAGE_NOISE_THRESHOLD) {
+    voltageAc = 0.0f;
+  }
+  return voltageAc;
+}
+
+float getSmoothedAcVoltage() {
+  float currentVal = readAcVoltageRms();
+  acVoltageHistory[acVoltageHistoryIndex] = currentVal;
+  acVoltageHistoryIndex = (acVoltageHistoryIndex + 1) % NUM_SAMPLES;
+  if (acVoltageHistoryIndex == 0) {
+    acVoltageHistoryFull = true;
+  }
+
+  int count = acVoltageHistoryFull ? NUM_SAMPLES : acVoltageHistoryIndex;
+  if (count == 0) {
+    return currentVal;
+  }
+
+  float sum = 0.0f;
+  for (int i = 0; i < count; i++) {
+    sum += acVoltageHistory[i];
+  }
+  return sum / count;
+}
+
+// Set LoRa
 bool initializeLoRa() {
   LoRa.setPins(csPin, resetPin, DIO0);
   if (!LoRa.begin(433E6)) {
@@ -211,6 +276,7 @@ void setup() {
     currentHistory[i] = 0.0f;
     dcCurrentHistory[i] = 0.0f;
     voltageHistory[i] = 0.0f;
+    acVoltageHistory[i] = 0.0f;
   }
 
   ACS.autoMidPoint();
@@ -230,14 +296,9 @@ void loop() {
     lastTimeSend = millis();
 
     float iGenerator = getSmoothedDcCurrentAmps();
-
     float vGenerator = getSmoothedVoltage();
-
     float iOutput = getSmoothedCurrent();
-
-    int rawTeganganAC = analogRead(pinTeganganAC);
-    
-    float vOutput = ((float)rawTeganganAC / ADC_MAX) * VREF * OUTPUT_VOLTAGE_CALIBRATION;
+    float vOutput = getSmoothedAcVoltage();
 
     String dataTosend = "GEN_TX1,GEN_RX1," + 
                         String(vGenerator, 2) + "," +
